@@ -1,7 +1,8 @@
-all:	source.c
-	gcc -ansi -pedantic -Wall -ffast-math -O3 source.c -lGL -lGLU -lglut
-	./a.out
+CC=gcc
+CFLAGS+=-Wall -pedantic -std=c99 -ffast-math -O3
+LDLIBS+=-lGL -lGLU -lglut -lpng
 
-debug:	source.c
-	gcc -ansi -pedantic -Wall -g source.c -lGL -lGLU -lglut
-	xxgdb ./a.out
+3dtree:	read_png.o 3dtree.o
+
+clean:
+	-rm *.o 3dtree

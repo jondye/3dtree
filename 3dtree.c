@@ -1,9 +1,12 @@
+/* vi:set sw=2 ts=2 et: */
+
 #include <GL/glut.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
 #include <string.h>
+#include "read_png.h"
 
 #ifdef WIN32
 #include <windows.h>
@@ -17,15 +20,12 @@
 #define PI 3.141593
 #endif
 
-/* include the textures */
-#include "texture.h"
-#include "wood_texture.h"
-#include "soil_texture.h"
-
 /* Constants */
 GLfloat container_color[] = {0.0, 0.2, 0.2, 1.0};
 GLfloat water_color[]     = {0.0, 0.0, 0.8, 0.5};
 GLfloat chute_color[]     = {0.5, 0.5, 0.5, 1.0};
+GLfloat tree_color[]      = {0.6, 0.4, 0.0, 1.0}; 
+GLfloat leaf_color[]      = {0.0, 0.5, 0.0, 1.0};
 #define container_radius        5.0
 #define container_height        10.0
 #define door_height             2.5     /* height of door above ground */
@@ -79,12 +79,14 @@ void init_tray(void);
 void init_chute(void);
 void init_soil(void);
 void init_water(void);
+void init_tree(void);
 
 /* Drawing functions */
 void water_in_tank(void);
 void water_in_tray(void);
 void door(void);
 void water_on_chute(void);
+void tree(void);
 
 /* helper functions */
 void divide_triangle(int, GLfloat[3], GLfloat[3], GLfloat[3]);
@@ -126,6 +128,7 @@ int main(int argc, char *argv[]) {
   init_chute();
   init_soil();
   init_water();
+  init_tree();
 
   /* register callbacks */
   glutDisplayFunc(display);
@@ -157,8 +160,8 @@ void display() {
   /* Set up the viewpoint */
   glLoadIdentity();
   gluLookAt(viewer_position[0], viewer_position[1], viewer_position[2],
-  	    0.0, (door_height+2.0)/2.0, door_frame[0][2]+chute_length/2,
-	    0.0, 1.0, 0.0);
+            0.0, (door_height+2.0)/2.0, door_frame[0][2]+chute_length/2,
+            0.0, 1.0, 0.0);
 
   /* Place the lights */
   glLightfv(GL_LIGHT0, GL_AMBIENT_AND_DIFFUSE, light_color);
@@ -174,6 +177,7 @@ void display() {
   water_in_tray();
   water_on_chute();
   water_in_tank();
+  tree();
 
   glFlush();
   glutSwapBuffers();
@@ -190,30 +194,22 @@ void reshape(int w, int h) {
 }
 
 void init_textures() {
-  int i, j;
-  char *texel;
-  GLbyte wood[wood_width][wood_height][3];
-  GLbyte soil[soil_width][soil_height][3];
   GLbyte target_texture[128][128][3];
+  unsigned int width, height;
+  GLbyte * source_texture;
 
-  /* create a texture object */
-  glGenTextures(2, textures);
+  glGenTextures(2, textures); /* create the texture objects */
+
   glBindTexture(GL_TEXTURE_2D, textures[wood_texture]);
-
-  /* load the texture */
-  texel = wood_header_data;
-  for(i = 0; i < wood_width; i++)
-    for(j = 0; j < wood_height; j++) {
-      HEADER_PIXEL(texel, wood[i][j]);
-    }
-
-  /* scale the texture */
-  if(0 != gluScaleImage(GL_RGB, wood_width, wood_height, 
-			GL_UNSIGNED_BYTE, wood,
-			128, 128, GL_UNSIGNED_BYTE, target_texture)) {
+  /* load and scale the texture */
+  read_png("wood.png", &width, &height, &source_texture);
+  if(0 != gluScaleImage(GL_RGB, width, height, GL_UNSIGNED_BYTE,
+        source_texture, 128, 128, GL_UNSIGNED_BYTE, target_texture)) {
     fprintf(stderr, "ERROR: could not scale texture");
     exit(1);
   }
+  free(source_texture);
+  source_texture = NULL;
 
   /* apply the texture */
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -221,35 +217,28 @@ void init_textures() {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 128, 128,
-	       0, GL_RGB, GL_UNSIGNED_BYTE, target_texture);
+               0, GL_RGB, GL_UNSIGNED_BYTE, target_texture);
 
   glBindTexture(GL_TEXTURE_2D, textures[soil_texture]);
-
-  /* load the texture */
-  texel = soil_header_data;
-  for(i = 0; i < soil_width; i++)
-    for(j = 0; j < soil_height; j++) {
-      HEADER_PIXEL(texel, soil[i][j]);
-    }
-
-  /* scale the texture */
-  if(0 != gluScaleImage(GL_RGB, soil_width, soil_height,
-			GL_UNSIGNED_BYTE, soil, 128, 128,
-			GL_UNSIGNED_BYTE, target_texture)) {
+  /* load and scale the texture */
+  read_png("soil.png", &width, &height, &source_texture);
+  if(0 != gluScaleImage(GL_RGB, width, height, GL_UNSIGNED_BYTE,
+        source_texture, 128, 128, GL_UNSIGNED_BYTE, target_texture)) {
     fprintf(stderr, "ERROR: could not scale texture");
     exit(1);
   }
+  free(source_texture);
+  source_texture = NULL;
 
   /* apply the texture */
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 128, 128,
-	       0, GL_RGB, GL_UNSIGNED_BYTE, target_texture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 128, 128, 0, GL_RGB, GL_UNSIGNED_BYTE,
+               target_texture);
 
   glBindTexture(GL_TEXTURE_2D, 0);
-  
 }
 
 void door() {
@@ -295,13 +284,13 @@ void water_on_chute() {
   glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 100);
 
   glBegin(GL_POINTS);
-  for(i = 0; i < water_particles; i++) {
-    if(water[i][6]) {
-      glVertex3fv(water[i]);
-      /*glPushMatrix();
-	glTranslatef(water[i][0], water[i][1], water[i][2]);
-	glutSolidSphere(water_particle_size, 10, 10);
-	glPopMatrix();*/
+    for(i = 0; i < water_particles; i++) {
+      if(water[i][6]) {
+        glVertex3fv(water[i]);
+        /*glPushMatrix();
+        glTranslatef(water[i][0], water[i][1], water[i][2]);
+        glutSolidSphere(water_particle_size, 10, 10);
+        glPopMatrix();*/
       }
     }
   glEnd();
@@ -372,15 +361,15 @@ void water_in_tank() {
     glBegin(GL_POLYGON);
       glNormal3f(0.0, -1.0, 0.0);
       for(i = 0; i < 6; i++)
-	glVertex3fv(bottom[i]);
+        glVertex3fv(bottom[i]);
     glEnd();
 
     if(viewer_position[1] < container_water_level) {
       /* Draw the top */
       glBegin(GL_POLYGON);
         glNormal3f(0.0, 1.0, 0.0);
-	for(i = 0; i < 6; i++)
-	  glVertex3fv(top[i]);
+        for(i = 0; i < 6; i++)
+          glVertex3fv(top[i]);
       glEnd();
     }
 
@@ -401,32 +390,37 @@ void water_in_tank() {
       i = (back == 0) ? 5 : back - 1;
       /* Draw the three back panels and the front right panel */
       for(drawn = 0; drawn < 4; drawn++, i++) {
-	if(i > 5) i -= 6;
-	glNormal3fv(normals[i]);
-	glVertex3fv(bottom[i]);
-	glVertex3fv(top[i]);
-	if(i == 5) {
-	  glVertex3fv(top[0]);
-	  glVertex3fv(bottom[0]);
-	} else {
-	  glVertex3fv(top[i+1]);
-	  glVertex3fv(bottom[i+1]);
-	}
+        if(i > 5) i -= 6;
+        glNormal3fv(normals[i]);
+        glVertex3fv(bottom[i]);
+        glVertex3fv(top[i]);
+        if(i == 5) {
+          glVertex3fv(top[0]);
+          glVertex3fv(bottom[0]);
+        } else {
+          glVertex3fv(top[i+1]);
+          glVertex3fv(bottom[i+1]);
+        }
       }
       /* Draw the front left panel and then the front panel */
-      i = (i > 4) ? (i -= 5) : (i += 1);
+      if(i > 4) {
+        i -= 5;
+      } else {
+        i += 1;
+      }
+
       for(; drawn < 6; drawn++, i--) {
-	if(i < 0) i += 6;
-	glNormal3fv(normals[i]);
-	glVertex3fv(bottom[i]);
-	glVertex3fv(top[i]);
-	if(i == 5) {
-	  glVertex3fv(top[0]);
-	  glVertex3fv(bottom[0]);
-	} else {
-	  glVertex3fv(top[i+1]);
-	  glVertex3fv(bottom[i+1]);
-	}
+        if(i < 0) i += 6;
+        glNormal3fv(normals[i]);
+        glVertex3fv(bottom[i]);
+        glVertex3fv(top[i]);
+        if(i == 5) {
+          glVertex3fv(top[0]);
+          glVertex3fv(bottom[0]);
+        } else {
+          glVertex3fv(top[i+1]);
+          glVertex3fv(bottom[i+1]);
+        }
       }
     glEnd();
 
@@ -434,8 +428,8 @@ void water_in_tank() {
       /* Draw the top */
       glBegin(GL_POLYGON);
         glNormal3f(0.0, 1.0, 0.0);
-	for(i = 0; i < 6; i++)
-	  glVertex3fv(top[i]);
+        for(i = 0; i < 6; i++)
+          glVertex3fv(top[i]);
       glEnd();
     }
   
@@ -469,41 +463,42 @@ void init_container() {
     glNewList(container, GL_COMPILE);
       glPushMatrix();
         glRotatef(-30.0, 0.0, 1.0, 0.0);
-	
-	/* Generate the vertices for the container */
-	for(i = 0; i < 6; i++) {
-	  theta = i * 2.0 * PI / 6.0;
-	  
-	  x = container_radius * sin(theta);
-	  z = container_radius * cos(theta);
-	  top[i][0] = x;
-	  top[i][1] = container_height;
-	  top[i][2] = z;
-	  bottom[i][0] = x;
-	  bottom[i][1] = 0.0;
-	  bottom[i][2] = z;
-	}
-	
-	/* Set the material properties */
-	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, container_color);
-	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, container_color);
-	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10);
-	
-	/* Draw the container */
-	for(i = 0; i < 6; i++) {
-	  glBegin(GL_LINE_LOOP);
-	    glVertex3fv(bottom[i]);
-	    glVertex3fv(top[i]);
-	    if(i == 5) {
-	      glVertex3fv(top[0]);
-	      glVertex3fv(bottom[0]);
-	    } else {
-	      glVertex3fv(top[i+1]);
-	      glVertex3fv(bottom[i+1]);
-	    }
-	  glEnd();
-	}
-	
+
+        /* Generate the vertices for the container */
+        for(i = 0; i < 6; i++) {
+          theta = i * 2.0 * PI / 6.0;
+          
+          x = container_radius * sin(theta);
+          z = container_radius * cos(theta);
+          top[i][0] = x;
+          top[i][1] = container_height;
+          top[i][2] = z;
+          bottom[i][0] = x;
+          bottom[i][1] = 0.0;
+          bottom[i][2] = z;
+        }
+        
+        /* Set the material properties */
+        glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE,
+                     container_color);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, container_color);
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 10);
+        
+        /* Draw the container */
+        for(i = 0; i < 6; i++) {
+          glBegin(GL_LINE_LOOP);
+            glVertex3fv(bottom[i]);
+            glVertex3fv(top[i]);
+            if(i == 5) {
+              glVertex3fv(top[0]);
+              glVertex3fv(bottom[0]);
+            } else {
+              glVertex3fv(top[i+1]);
+              glVertex3fv(bottom[i+1]);
+            }
+          glEnd();
+        }
+        
       glPopMatrix();
 
       /* calculate the door frame */
@@ -517,7 +512,7 @@ void init_container() {
       door_frame[1][2] = doorz;
       door_frame[2][0] = 0.0;
       door_frame_height = sqrt((2*door_half_width)*(2*door_half_width) - 
-			       door_half_width*door_half_width);
+                               door_half_width*door_half_width);
       door_frame[2][1] = door_height + door_frame_height;
       door_frame[2][2] = doorz;
 
@@ -540,19 +535,19 @@ void init_container() {
 void init_tray() {
   int i;
   GLfloat tray_vertices[8][3] = {{tray_size/2, 0.0, tray_size/2},
-				 {-tray_size/2, 0.0, tray_size/2},
-				 {-tray_size/2, 0.0, -tray_size/2},
-				 {tray_size/2, 0.0, -tray_size/2},
-				 {tray_size/2, 2.0, tray_size/2},
-				 {-tray_size/2, 2.0, tray_size/2},
-				 {-tray_size/2, 2.0, -tray_size/2},
-				 {tray_size/2, 2.0, -tray_size/2}};
+                                 {-tray_size/2, 0.0, tray_size/2},
+                                 {-tray_size/2, 0.0, -tray_size/2},
+                                 {tray_size/2, 0.0, -tray_size/2},
+                                 {tray_size/2, 2.0, tray_size/2},
+                                 {-tray_size/2, 2.0, tray_size/2},
+                                 {-tray_size/2, 2.0, -tray_size/2},
+                                 {tray_size/2, 2.0, -tray_size/2}};
   GLfloat tray_normals[5][3] = {{0.0, 0.0, 1.0},
-				{-1.0, 0.0, 0.0},
-				{0.0, 0.0, -1.0},
-				{1.0, 0.0, 0.0},
-				{0.0, -1.0, 0.0}};
-				 
+                                {-1.0, 0.0, 0.0},
+                                {0.0, 0.0, -1.0},
+                                {1.0, 0.0, 0.0},
+                                {0.0, -1.0, 0.0}};
+                                 
   tray = glGenLists(1);
   if(tray != 0) {
     glNewList(tray, GL_COMPILE);
@@ -560,40 +555,40 @@ void init_tray() {
       glPushMatrix();
       
         glTranslatef(0.0, 0.0, 
-		     door_frame[0][2] + (chute_length) + tray_size/2);
+                     door_frame[0][2] + (chute_length) + tray_size/2);
 
-	/* select the wood texture */
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-	glBindTexture(GL_TEXTURE_2D, textures[wood_texture]);
+        /* select the wood texture */
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glBindTexture(GL_TEXTURE_2D, textures[wood_texture]);
 
         /* draw the sides */
         glBegin(GL_QUADS);
           for(i = 0; i < 4; i++) {
-	    glNormal3fv(tray_normals[i]);
-	    glTexCoord2i(1,0); glVertex3fv(tray_vertices[i]);
-	    glTexCoord2i(1,1); glVertex3fv(tray_vertices[i+4]);
-	    if(i == 3) {
-	      glTexCoord2i(0,1); glVertex3fv(tray_vertices[4]);
-	      glTexCoord2i(0,0); glVertex3fv(tray_vertices[0]);
-	    } else {
-	      glTexCoord2i(0,1); glVertex3fv(tray_vertices[i+5]);
-	      glTexCoord2i(0,0); glVertex3fv(tray_vertices[i+1]);
-	    }
-	  }
-	glEnd();
+            glNormal3fv(tray_normals[i]);
+            glTexCoord2i(1,0); glVertex3fv(tray_vertices[i]);
+            glTexCoord2i(1,1); glVertex3fv(tray_vertices[i+4]);
+            if(i == 3) {
+              glTexCoord2i(0,1); glVertex3fv(tray_vertices[4]);
+              glTexCoord2i(0,0); glVertex3fv(tray_vertices[0]);
+            } else {
+              glTexCoord2i(0,1); glVertex3fv(tray_vertices[i+5]);
+              glTexCoord2i(0,0); glVertex3fv(tray_vertices[i+1]);
+            }
+          }
+        glEnd();
 
 
-	/* draw the bottom */
-	glBegin(GL_POLYGON);
+        /* draw the bottom */
+        glBegin(GL_POLYGON);
           glNormal3fv(tray_normals[4]);
-	  glTexCoord2i(1,0); glVertex3fv(tray_vertices[0]);
-	  glTexCoord2i(0,0); glVertex3fv(tray_vertices[1]);
-	  glTexCoord2i(0,1); glVertex3fv(tray_vertices[2]);
-	  glTexCoord2i(1,1); glVertex3fv(tray_vertices[3]);
-	glEnd();
+          glTexCoord2i(1,0); glVertex3fv(tray_vertices[0]);
+          glTexCoord2i(0,0); glVertex3fv(tray_vertices[1]);
+          glTexCoord2i(0,1); glVertex3fv(tray_vertices[2]);
+          glTexCoord2i(1,1); glVertex3fv(tray_vertices[3]);
+        glEnd();
 
-	/* disable textures */
-	glBindTexture(GL_TEXTURE_2D, 0);
+        /* disable textures */
+        glBindTexture(GL_TEXTURE_2D, 0);
 
       glPopMatrix();
 
@@ -622,23 +617,23 @@ void init_chute() {
       normal_length = sqrt(h*h + l*l);
 
       glBegin(GL_QUADS);
-	glNormal3f(0.0, l/normal_length, h/normal_length);
+        glNormal3f(0.0, l/normal_length, h/normal_length);
         glVertex3f(door_frame[0][0], door_frame[0][1], door_frame[0][2]);
-	glVertex3f(door_frame[0][0], 2.0, door_frame[0][2] + chute_length);
-	glVertex3f(door_frame[1][0], 2.0, door_frame[1][2] + chute_length);
-	glVertex3f(door_frame[1][0], door_frame[1][1], door_frame[1][2]);
+        glVertex3f(door_frame[0][0], 2.0, door_frame[0][2] + chute_length);
+        glVertex3f(door_frame[1][0], 2.0, door_frame[1][2] + chute_length);
+        glVertex3f(door_frame[1][0], door_frame[1][1], door_frame[1][2]);
 
-	glNormal3f(-1.0, 0.0, 0.0);
+        glNormal3f(-1.0, 0.0, 0.0);
         glVertex3f(door_frame[0][0], door_frame[0][1]+0.5, door_frame[0][2]);
         glVertex3f(door_frame[0][0], door_frame[0][1], door_frame[0][2]);
-	glVertex3f(door_frame[0][0], 2.0, door_frame[0][2] + chute_length);
-	glVertex3f(door_frame[0][0], 2.5, door_frame[0][2] + chute_length);
+        glVertex3f(door_frame[0][0], 2.0, door_frame[0][2] + chute_length);
+        glVertex3f(door_frame[0][0], 2.5, door_frame[0][2] + chute_length);
 
-	glNormal3f(1.0, 0.0, 0.0);
+        glNormal3f(1.0, 0.0, 0.0);
         glVertex3f(door_frame[1][0], door_frame[1][1]+0.5, door_frame[1][2]);
         glVertex3f(door_frame[1][0], door_frame[1][1], door_frame[1][2]);
-	glVertex3f(door_frame[1][0], 2.0, door_frame[1][2] + chute_length);
-	glVertex3f(door_frame[1][0], 2.5, door_frame[1][2] + chute_length);
+        glVertex3f(door_frame[1][0], 2.0, door_frame[1][2] + chute_length);
+        glVertex3f(door_frame[1][0], 2.5, door_frame[1][2] + chute_length);
       glEnd();
     glEndList();
   } else {
@@ -657,22 +652,22 @@ void init_soil() {
       glPushMatrix();
         glTranslatef(0.0, 0.0, door_frame[0][2]+chute_length+tray_size/2);
     
-	p1[0] = p2[0] = p1[2] = p4[2] = -tray_size/2;
-	p3[0] = p4[0] = p2[2] = p3[2] = tray_size/2;
-	p1[1] = p2[1] = p3[1] = p4[1] = 1.0;
-	
-	/* select the soil texture */
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-	glBindTexture(GL_TEXTURE_2D, textures[soil_texture]);
-	
-	glBegin(GL_TRIANGLES);      
-	  divide_triangle(soil_subdivision_depth, p1, p2, centre);
-	  divide_triangle(soil_subdivision_depth, p2, p3, centre);
-	  divide_triangle(soil_subdivision_depth, p3, p4, centre);
-	  divide_triangle(soil_subdivision_depth, p4, p1, centre);
-	glEnd();
-	
-	glBindTexture(GL_TEXTURE_2D, 0);
+        p1[0] = p2[0] = p1[2] = p4[2] = -tray_size/2;
+        p3[0] = p4[0] = p2[2] = p3[2] = tray_size/2;
+        p1[1] = p2[1] = p3[1] = p4[1] = 1.0;
+        
+        /* select the soil texture */
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+        glBindTexture(GL_TEXTURE_2D, textures[soil_texture]);
+        
+        glBegin(GL_TRIANGLES);      
+          divide_triangle(soil_subdivision_depth, p1, p2, centre);
+          divide_triangle(soil_subdivision_depth, p2, p3, centre);
+          divide_triangle(soil_subdivision_depth, p3, p4, centre);
+          divide_triangle(soil_subdivision_depth, p4, p1, centre);
+        glEnd();
+        
+        glBindTexture(GL_TEXTURE_2D, 0);
       glPopMatrix();
     glEndList();
 
@@ -707,6 +702,11 @@ void divide_triangle(int depth, GLfloat p1[3], GLfloat p2[3], GLfloat p3[3]) {
     divide_triangle(depth-1, p1, new_point, p3);
     divide_triangle(depth-1, new_point, p2, p3);
   }
+}
+
+void init_tree()
+{
+
 }
 
 void keyboard(unsigned char key, int x, int y) {
@@ -785,7 +785,7 @@ void mouse(int button, int state, int x, int y) {
   glPushMatrix();
   glLoadIdentity();
   gluPickMatrix((GLdouble) x, (GLdouble) (viewport[3] - y),
-		2.0, 2.0, viewport);
+                2.0, 2.0, viewport);
   gluPerspective(45.0, (float)viewport[2]/(float)viewport[3], 2.0, 400.0);
   door();
 
@@ -913,38 +913,38 @@ void calculate_water(void) {
   for(i = 0; i < water_particles; i++) {
     if(water[i][6]) {  /* water particle is active */
       if(water[i][2] > end_of_chute) {
-	/* fallen off the chute */
-	/* gravity */
-	water[i][4] -= y_acceleration;
-	/* position */
-	water[i][1] += water[i][4] * elapsed;
-	water[i][2] += water[i][5] * elapsed;
-	if(water[i][1] <= dia) {
-	  /* increase water level in tray */
-	  tray_water_level += tray_water_particle_volume;
-	  if(container_water_level > door_frame[0][1] && 
-	     released < max_release) {
-	    /* restart particle */
-	    new_particle(water[i]);
-	    released++;
-	  } else
-	    /* deactivate particle */
-	    water[i][6] = 0;
-	}
+        /* fallen off the chute */
+        /* gravity */
+        water[i][4] -= y_acceleration;
+        /* position */
+        water[i][1] += water[i][4] * elapsed;
+        water[i][2] += water[i][5] * elapsed;
+        if(water[i][1] <= dia) {
+          /* increase water level in tray */
+          tray_water_level += tray_water_particle_volume;
+          if(container_water_level > door_frame[0][1] && 
+             released < max_release) {
+            /* restart particle */
+            new_particle(water[i]);
+            released++;
+          } else
+            /* deactivate particle */
+            water[i][6] = 0;
+        }
       } else {
-	/* on the chute */
-	water[i][2] += water[i][5] * elapsed;
-	water[i][1] += water[i][4] * elapsed;
-	water[i][5] += horiz_acc;
-	water[i][4] -= vert_acc;
+        /* on the chute */
+        water[i][2] += water[i][5] * elapsed;
+        water[i][1] += water[i][4] * elapsed;
+        water[i][5] += horiz_acc;
+        water[i][4] -= vert_acc;
       }
       used++;
     } else {
       if(container_water_level > door_frame[0][1] && 
-	 released < max_release) {
-	/* release more water */
-	new_particle(water[i]);
-	released++;
+         released < max_release) {
+        /* release more water */
+        new_particle(water[i]);
+        released++;
       }
     }
   }
@@ -953,3 +953,71 @@ void calculate_water(void) {
   active_particles = used;
   return;
 }
+
+void leaf()
+{
+  /* draw a leaf */
+  glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, leaf_color);
+  glBegin(GL_TRIANGLES);
+    glVertex3f(0.0, 0.2, 0.0);
+    glVertex3f(0.2, 0.0, 0.0);
+    glVertex3f(-0.2, 0.0, 0.0);
+  glEnd();
+}
+
+void branch(float size, float branch_trigger)
+{
+  float const branch_length = 0.5 * size;
+
+  /* draw a branch */
+  glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, tree_color);
+  glBegin(GL_LINES);
+    glVertex3f(0.0, 0.0, 0.0);
+    glVertex3f(0.0, branch_length, 0.0);
+  glEnd();
+  glTranslatef(0.0, branch_length, 0.0);
+
+  if(size < branch_trigger) {
+    leaf();
+  } else {
+    /* draw more branches */
+    float const smaller_size = size - branch_length;
+    float const smaller_branch_trigger = branch_trigger * 0.75;
+    glPushMatrix();
+      glRotatef(0.0, 0.0, 1.0, 0.0);
+      glRotatef(25.0, 0.0, 0.0, 1.0);
+      branch(smaller_size * 0.9, smaller_branch_trigger * 0.9);
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(72.0, 0.0, 1.0, 0.0);
+      glRotatef(30.0, 0.0, 0.0, 1.0);
+      branch(smaller_size, smaller_branch_trigger * 0.9);
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(144.0, 0.0, 1.0, 0.0);
+      glRotatef(25.0, 0.0, 0.0, 1.0);
+      branch(smaller_size * 0.9, smaller_branch_trigger);
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(216.0, 0.0, 1.0, 0.0);
+      glRotatef(30.0, 0.0, 0.0, 1.0);
+      branch(smaller_size * 1.1, smaller_branch_trigger * 1.1);
+    glPopMatrix();
+    glPushMatrix();
+      glRotatef(288.0, 0.0, 1.0, 0.0);
+      glRotatef(35.0, 0.0, 0.0, 1.0);
+      branch(smaller_size, smaller_branch_trigger * 1.1);
+    glPopMatrix();
+  }
+}
+
+void tree()
+{
+  glPushMatrix();
+    /* Place the tree in the center of the tray */
+    glTranslatef(0.0, 0.0, door_frame[0][2] + (chute_length) + tray_size/2);
+
+    branch(tray_water_level * 10.0, 2.0);
+  glPopMatrix();
+}
+
